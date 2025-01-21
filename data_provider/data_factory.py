@@ -1,20 +1,9 @@
-from data_provider.data_loader import Dataset_ETT_hour, Dataset_ETT_minute, Dataset_Custom, Dataset_Solar, Dataset_PEMS, \
-    Dataset_Pred
+from data_provider.data_loader import Dataset_Custom, Dataset_Pred
 from torch.utils.data import DataLoader
-
-data_dict = {
-    'ETTh1': Dataset_ETT_hour,
-    'ETTh2': Dataset_ETT_hour,
-    'ETTm1': Dataset_ETT_minute,
-    'ETTm2': Dataset_ETT_minute,
-    'Solar': Dataset_Solar,
-    'PEMS': Dataset_PEMS,
-    'custom': Dataset_Custom,
-}
 
 
 def data_provider(args, flag):
-    Data = data_dict[args.data]
+    Data = Dataset_Custom
     timeenc = 0 if args.embed != 'timeF' else 1
 
     if flag == 'test':

@@ -1,46 +1,39 @@
 import argparse
 import torch
-import datetime
-from itransformer import Trainer
-
-def run_model(config, flag='train'):
-    # init
-    model = Trainer(config)
-
-    if flag == 'train':
-        setting = datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-        model.train(setting)
-
-        model.test(setting)
-        model.predict(setting, True)
-    torch.cuda.empty_cache()
-    return True
-
+from experiments.exp_long_term_forecasting import Exp_Long_Term_Forecast
+from experiments.exp_long_term_forecasting_partial import Exp_Long_Term_Forecast_Partial
+import random
+import numpy as np
 
 if __name__ == '__main__':
+    fix_seed = 2023
+    random.seed(fix_seed)
+    torch.manual_seed(fix_seed)
+    np.random.seed(fix_seed)
+
     parser = argparse.ArgumentParser(description='iTransformer')
 
     # basic config
-    parser.add_argument('--is_training', type=int, default=1, help='status')
-    parser.add_argument('--model_id', type=str, default='test', help='model id')
-    parser.add_argument('--model', type=str, default='iTransformer',
+    parser.add_argument('--is_training', type=int, required=True, default=1, help='status')
+    parser.add_argument('--model_id', type=str, required=True, default='test', help='model id')
+    parser.add_argument('--model', type=str, required=True, default='iTransformer',
                         help='model name, options: [iTransformer, iInformer, iReformer, iFlowformer, iFlashformer]')
 
     # data loader
-    parser.add_argument('--data', type=str, default='custom', help='dataset type')
-    parser.add_argument('--root_path', type=str, default='/home/dyd9800/dataset/', help='root path of the data file')
-    parser.add_argument('--data_path', type=str, default='was.csv', help='data csv file')
-    parser.add_argument('--features', type=str, default='MS',
+    parser.add_argument('--data', type=str, required=True, default='custom', help='dataset type')
+    parser.add_argument('--root_path', type=str, default='./data/electricity/', help='root path of the data file')
+    parser.add_argument('--data_path', type=str, default='electricity.csv', help='data csv file')
+    parser.add_argument('--features', type=str, default='M',
                         help='forecasting task, options:[M, S, MS]; M:multivariate predict multivariate, S:univariate predict univariate, MS:multivariate predict univariate')
-    parser.add_argument('--target', type=str, default='txn_elapse', help='target feature in S or MS task')
-    parser.add_argument('--freq', type=str, default='t',
+    parser.add_argument('--target', type=str, default='OT', help='target feature in S or MS task')
+    parser.add_argument('--freq', type=str, default='h',
                         help='freq for time features encoding, options:[s:secondly, t:minutely, h:hourly, d:daily, b:business days, w:weekly, m:monthly], you can also use more detailed freq like 15min or 3h')
     parser.add_argument('--checkpoints', type=str, default='./checkpoints/', help='location of model checkpoints')
 
     # forecasting task
-    parser.add_argument('--seq_len', type=int, default=60, help='input sequence length')
+    parser.add_argument('--seq_len', type=int, default=96, help='input sequence length')
     parser.add_argument('--label_len', type=int, default=48, help='start token length') # no longer needed in inverted Transformers
-    parser.add_argument('--pred_len', type=int, default=60, help='prediction sequence length')
+    parser.add_argument('--pred_len', type=int, default=96, help='prediction sequence length')
 
     # model define
     parser.add_argument('--enc_in', type=int, default=7, help='encoder input size')
@@ -67,7 +60,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_workers', type=int, default=10, help='data loader num workers')
     parser.add_argument('--itr', type=int, default=1, help='experiments times')
     parser.add_argument('--train_epochs', type=int, default=10, help='train epochs')
-    parser.add_argument('--batch_size', type=int, default=512, help='batch size of train input data')
+    parser.add_argument('--batch_size', type=int, default=32, help='batch size of train input data')
     parser.add_argument('--patience', type=int, default=3, help='early stopping patience')
     parser.add_argument('--learning_rate', type=float, default=0.0001, help='optimizer learning rate')
     parser.add_argument('--des', type=str, default='test', help='exp description')
@@ -82,22 +75,23 @@ if __name__ == '__main__':
     parser.add_argument('--devices', type=str, default='0,1,2,3', help='device ids of multile gpus')
 
     # iTransformer
-    parser.add_argument('--exp_name', type=str, default='MTSF', help='experiemnt name, options:[MTSF, partial_train]')
+    parser.add_argument('--exp_name', type=str, required=False, default='MTSF',
+                        help='experiemnt name, options:[MTSF, partial_train]')
     parser.add_argument('--channel_independence', type=bool, default=False, help='whether to use channel_independence mechanism')
     parser.add_argument('--inverse', action='store_true', help='inverse output data', default=False)
     parser.add_argument('--class_strategy', type=str, default='projection', help='projection/average/cls_token')
-    parser.add_argument('--target_root_path', type=str, default='/home/dyd9800/dataset/', help='root path of the data file')
-    parser.add_argument('--target_data_path', type=str, default='was.csv', help='data file')
+    parser.add_argument('--target_root_path', type=str, default='./data/electricity/', help='root path of the data file')
+    parser.add_argument('--target_data_path', type=str, default='electricity.csv', help='data file')
     parser.add_argument('--efficient_training', type=bool, default=False, help='whether to use efficient_training (exp_name should be partial train)') # See Figure 8 of our paper for the detail
     parser.add_argument('--use_norm', type=int, default=True, help='use norm and denorm')
     parser.add_argument('--partial_start_index', type=int, default=0, help='the start index of variates for partial training, '
                                                                            'you can select [partial_start_index, min(enc_in + partial_start_index, N)]')
-    args = parser.parse_args()
 
+    args = parser.parse_args()
     args.use_gpu = True if torch.cuda.is_available() and args.use_gpu else False
 
     if args.use_gpu and args.use_multi_gpu:
-        args.dvices = args.devices.replace(' ', '')
+        args.devices = args.devices.replace(' ', '')
         device_ids = args.devices.split(',')
         args.device_ids = [int(id_) for id_ in device_ids]
         args.gpu = args.device_ids[0]
@@ -105,4 +99,68 @@ if __name__ == '__main__':
     print('Args in experiment:')
     print(args)
 
-    performances = run_model(args, flag='train')
+    if args.exp_name == 'partial_train': # See Figure 8 of our paper, for the detail
+        Exp = Exp_Long_Term_Forecast_Partial
+    else: # MTSF: multivariate time series forecasting
+        Exp = Exp_Long_Term_Forecast
+
+
+    if args.is_training:
+        for ii in range(args.itr):
+            # setting record of experiments
+            setting = '{}_{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_fc{}_eb{}_dt{}_{}_{}'.format(
+                args.model_id,
+                args.model,
+                args.data,
+                args.features,
+                args.seq_len,
+                args.label_len,
+                args.pred_len,
+                args.d_model,
+                args.n_heads,
+                args.e_layers,
+                args.d_layers,
+                args.d_ff,
+                args.factor,
+                args.embed,
+                args.distil,
+                args.des,
+                args.class_strategy, ii)
+
+            exp = Exp(args)  # set experiments
+            print('>>>>>>>start training : {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))
+            exp.train(setting)
+
+            print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
+            exp.test(setting)
+
+            if args.do_predict:
+                print('>>>>>>>predicting : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
+                exp.predict(setting, True)
+
+            torch.cuda.empty_cache()
+    else:
+        ii = 0
+        setting = '{}_{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_fc{}_eb{}_dt{}_{}_{}'.format(
+            args.model_id,
+            args.model,
+            args.data,
+            args.features,
+            args.seq_len,
+            args.label_len,
+            args.pred_len,
+            args.d_model,
+            args.n_heads,
+            args.e_layers,
+            args.d_layers,
+            args.d_ff,
+            args.factor,
+            args.embed,
+            args.distil,
+            args.des,
+            args.class_strategy, ii)
+
+        exp = Exp(args)  # set experiments
+        print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
+        exp.test(setting, test=1)
+        torch.cuda.empty_cache()
